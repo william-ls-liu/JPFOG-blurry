@@ -1,5 +1,7 @@
 # Author: William Liu <liwi@ohsu.edu>
 
+import os
+
 from PySide6.QtCore import QStandardPaths, Qt, QUrl, Slot
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
@@ -30,6 +32,9 @@ class MainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
+
+        # Store previously used video directory
+        self._previous_dir = None
 
         # Widgets for video and audio playback
         self._media_player = QMediaPlayer()
@@ -174,12 +179,18 @@ class MainWindow(QMainWindow):
     def open_video(self):
         self._ensure_stopped()
         file_dialog = QFileDialog(self)
-        file_dialog.setMimeTypeFilters("video/mp4")
-        movies_location = QStandardPaths.writableLocation(QStandardPaths.MoviesLocation)
+        movies_location = (
+            QStandardPaths.writableLocation(QStandardPaths.MoviesLocation)
+            if self._previous_dir is None
+            else self._previous_dir
+        )
         file_dialog.setDirectory(movies_location)
+        file_dialog.setFileMode(QFileDialog.ExistingFile)
+        file_dialog.setNameFilter("Videos (*.mp4)")
         if file_dialog.exec() == QDialog.Accepted:
             self._media_player.setSource(file_dialog.selectedUrls()[0])
             self._video_label.setText(file_dialog.selectedFiles()[0])
+            self._previous_dir = os.path.dirname(file_dialog.selectedFiles()[0])
             self._media_player.play()
             self._audio_output.setVolume(0)
         else:
