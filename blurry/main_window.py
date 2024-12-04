@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QLineEdit,
     QMainWindow,
     QPushButton,
     QSlider,
@@ -92,7 +91,7 @@ class MainWindow(QMainWindow):
 
         self._medication_status_label = QLabel("On/Off", parent=self)
         self._medication_status_combobox = QComboBox(parent=self)
-        self._medication_status_combobox.addItems(["On", "Off"])
+        self._medication_status_combobox.addItems(["on", "off"])
 
         self._trial_id_label = QLabel("Trial ID", parent=self)
         self._trial_id_combobox = QComboBox(parent=self)
@@ -161,8 +160,8 @@ class MainWindow(QMainWindow):
         queue_layout.addWidget(self._queue)
 
         central_layout = QHBoxLayout()
-        central_layout.addLayout(video_player_layout, stretch=3)
-        central_layout.addLayout(queue_layout)
+        central_layout.addLayout(video_player_layout, stretch=1)
+        central_layout.addLayout(queue_layout, stretch=1)
         self._central_widget = QWidget(parent=self)
         self._central_widget.setLayout(central_layout)
         self.setCentralWidget(self._central_widget)
@@ -219,14 +218,42 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def enqueue(self) -> None:
-        print(self._media_player.source().toLocalFile())
-        print(type(self._media_player.source().toLocalFile()))
+        local_path = self._media_player.source().toLocalFile()
+        if local_path == "":
+            return
+
+        new_filename = self._build_filename()
+        original_name = QTableWidgetItem(local_path)
+        original_name.setFlags(~Qt.ItemIsEditable)
+        new_name = QTableWidgetItem(new_filename)
+        new_name.setFlags(~Qt.ItemIsEditable)
+        num_rows = self._queue.rowCount()
+        self._queue.setRowCount(num_rows + 1)
+        self._queue.setItem(num_rows, 0, original_name)
+        self._queue.setItem(num_rows, 1, new_name)
+
+    def _build_filename(self) -> str:
+        site_id = self._site_id_combobox.currentText()
+        subject_id = self._subject_id_spinbox.value()
+        freezer_status = self._freezer_status_combobox.currentText()
+        session_id = self._session_id_combobox.currentText()
+        medication_status = self._medication_status_combobox.currentText()
+        trial_id = self._trial_id_combobox.currentText()
+        retry = self._retry_spinbox.value()
+        video_plane = self._video_plane_combobox.currentText()
+
+        if retry == 0:
+            return f"{site_id}_sub{subject_id:03d}_{freezer_status}_{session_id}_{medication_status}_{trial_id}_{video_plane}_blur.mp4"
+
+        return f"{site_id}_sub{subject_id:03d}_{freezer_status}_{session_id}_{medication_status}_{trial_id}-retr{retry}_{video_plane}_blur.mp4"
 
 
 if __name__ == "__main__":
     app = QApplication()
     main_window = MainWindow()
     available_geometry = main_window.screen().availableGeometry()
-    main_window.resize(available_geometry.width() / 3, available_geometry.height() / 2)
+    main_window.resize(
+        available_geometry.width() / 1.5, available_geometry.height() / 1.1
+    )
     main_window.show()
     app.exec()
