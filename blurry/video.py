@@ -62,6 +62,7 @@ class Decoder:
         self.height = self.stream.height
         self.width = self.stream.width
         self.fps = self.stream.average_rate
+        self.frames = self.stream.frames
         self.codec = self.stream.codec_context.name
 
     def decode(self) -> None:
