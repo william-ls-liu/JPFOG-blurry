@@ -1,8 +1,21 @@
 # Author: William Liu <liwi@ohsu.edu>
 
 import os
+import shutil
 
-from PySide6.QtCore import QStandardPaths, Qt, QUrl, Slot
+import av
+import av.logging
+import cv2 as cv
+import skimage.draw
+from progress_dialog import ProgressDialog
+from PySide6.QtCore import (
+    QCoreApplication,
+    QStandardPaths,
+    Qt,
+    QUrl,
+    Signal,
+    Slot,
+)
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
@@ -25,10 +38,17 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from video import Decoder, Encoder
+
+from centerface import CenterFace
 
 
 class MainWindow(QMainWindow):
     """The Main Window of the application."""
+
+    video_progress = Signal(int)
+    frame_progress = Signal(int)
+    total_frames = Signal(int)
 
     def __init__(self) -> None:
         super().__init__()
@@ -49,7 +69,7 @@ class MainWindow(QMainWindow):
 
         # Create the menu bar
         menu_bar = self.menuBar()
-        open_action = QAction("&Open video file...", self)
+        open_action = QAction("&Open video file...", parent=self)
         open_action.triggered.connect(self.open_video)
         menu_bar.addAction(open_action)
 
@@ -153,6 +173,10 @@ class MainWindow(QMainWindow):
             QHeaderView.Stretch
         )  # make cols fill available space
 
+        # Blur faces button
+        self._run_blurring_button = QPushButton("Run blurring...", parent=self)
+        self._run_blurring_button.clicked.connect(self.blur_videos)
+
         # Layout for the video player
         video_player_layout = QVBoxLayout()
         video_player_layout.addWidget(self._video_label)
@@ -163,6 +187,7 @@ class MainWindow(QMainWindow):
         queue_layout = QVBoxLayout()
         queue_layout.addLayout(filename_builder_layout)
         queue_layout.addWidget(self._queue)
+        queue_layout.addWidget(self._run_blurring_button)
 
         central_layout = QHBoxLayout()
         central_layout.addLayout(video_player_layout, stretch=1)
@@ -258,8 +283,99 @@ class MainWindow(QMainWindow):
 
         return f"{site_id}_sub{subject_id:03d}_{freezer_status}_{session_id}_{medication_status}_{trial_id}-retr{retry}_{video_plane}_blur.mp4"
 
+    @Slot()
+    def blur_videos(self) -> None:
+        num_rows = self._queue.rowCount()
+        if num_rows == 0:
+            return
+
+        export_dir = self._set_export_directory()
+        if export_dir == "":
+            return
+
+        blur_export_dir = os.path.join(export_dir, "blur")
+        unblur_export_dir = os.path.join(export_dir, "unblur")
+        try:
+            os.mkdir(blur_export_dir)
+            os.mkdir(unblur_export_dir)
+        except FileExistsError:
+            pass
+
+        self._ensure_stopped()
+        centerface = CenterFace()
+        progress_dialog = ProgressDialog(self, num_rows)
+        self.video_progress.connect(progress_dialog.update_queue_progress)
+        self.video_progress.connect(progress_dialog.update_queue_label)
+        self.frame_progress.connect(progress_dialog.update_frame_progress)
+        self.frame_progress.connect(progress_dialog.update_frame_label)
+        self.total_frames.connect(progress_dialog.update_total_frames)
+        progress_dialog.show()
+        for row in range(num_rows):
+            self.video_progress.emit(row)
+            QCoreApplication.processEvents()
+            local_path = self._queue.item(row, 0).text()
+            new_name = self._queue.item(row, 1).text()
+            unblurred_new_name = new_name.replace("blur", "unblur")
+            shutil.copy2(
+                local_path, os.path.join(unblur_export_dir, unblurred_new_name)
+            )
+            new_path = os.path.join(blur_export_dir, new_name)
+            decoder = Decoder(local_path)
+            encoder = Encoder(
+                new_path,
+                decoder.fps,
+                decoder.bit_rate // 2,
+                decoder.width,
+                decoder.height,
+                decoder.codec,
+            )
+            self.total_frames.emit(decoder.frames)
+            for i, frame in enumerate(decoder.decode()):
+                self.frame_progress.emit(i + 1)
+                QCoreApplication.processEvents()
+                img_as_array = frame.to_ndarray(format="rgb24")
+                dets, _ = centerface(
+                    img_as_array, frame.height, frame.width, threshold=0.2
+                )
+                for det in dets:
+                    boxes, _ = det[:4], det[4]
+                    x1, y1, x2, y2 = boxes.astype(int)
+                    h, w = y2 - y1, x2 - x1
+                    scale = 0.3
+                    bf = 2
+                    y1 -= int(h * scale)
+                    y2 += int(h * scale)
+                    x1 -= int(w * scale)
+                    x2 += int(w * scale)
+                    y1, y2 = max(0, y1), min(img_as_array.shape[0] - 1, y2)
+                    x1, x2 = max(0, x1), min(img_as_array.shape[1] - 1, x2)
+                    face_roi = img_as_array[y1:y2, x1:x2]
+                    blurred_box = cv.blur(
+                        img_as_array[y1:y2, x1:x2],
+                        (abs(x2 - x1) // bf, abs(y2 - y1) // bf),
+                    )
+                    ey, ex = skimage.draw.ellipse(
+                        (y2 - y1) // 2, (x2 - x1) // 2, (y2 - y1) // 2, (x2 - x1) // 2
+                    )
+                    face_roi[ey, ex] = blurred_box[ey, ex]
+                    img_as_array[y1:y2, x1:x2] = face_roi
+                encoder.encode_frame(img_as_array)
+            encoder.finish()
+            decoder.finish()
+            QCoreApplication.processEvents()
+
+    def _set_export_directory(self) -> str:
+        dir = QFileDialog.getExistingDirectory(
+            parent=self,
+            caption="Choose an export location",
+            dir=QStandardPaths.writableLocation(QStandardPaths.MoviesLocation),
+            options=QFileDialog.ShowDirsOnly,
+        )
+        return dir
+
 
 if __name__ == "__main__":
+    av.logging.set_level(av.logging.PANIC)
     app = QApplication()
     main_window = MainWindow()
     available_geometry = main_window.screen().availableGeometry()
