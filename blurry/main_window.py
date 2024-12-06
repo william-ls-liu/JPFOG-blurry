@@ -22,14 +22,15 @@ from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
-    QMessageBox,
     QDialog,
+    QDoubleSpinBox,
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QSlider,
     QSpinBox,
@@ -56,7 +57,7 @@ class MainWindow(QMainWindow):
 
         # Store previously used video directory
         self._previous_dir = None
-        
+
         # Flag for whether user has cancelled the blurring process
         self._cancel_blurring = False
 
@@ -179,6 +180,13 @@ class MainWindow(QMainWindow):
         horizontal_header.setSectionResizeMode(1, QHeaderView.Stretch)
         horizontal_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
 
+        # Threshold Slider
+        self._threshold_label = QLabel("Threshold value", parent=self)
+        self._threshold_spinbox = QDoubleSpinBox(parent=self)
+        self._threshold_spinbox.setMinimum(0.01)
+        self._threshold_spinbox.setValue(0.35)
+        self._threshold_spinbox.setSingleStep(0.01)
+
         # Blur faces button
         self._run_blurring_button = QPushButton("Run blurring...", parent=self)
         self._run_blurring_button.clicked.connect(self.blur_videos)
@@ -190,9 +198,13 @@ class MainWindow(QMainWindow):
         video_player_layout.addWidget(self._scrubber)
 
         # Layout for the file queue and filename builder
+        threshold_layout = QHBoxLayout()
+        threshold_layout.addWidget(self._threshold_label)
+        threshold_layout.addWidget(self._threshold_spinbox)
         queue_layout = QVBoxLayout()
         queue_layout.addLayout(filename_builder_layout)
         queue_layout.addWidget(self._queue)
+        queue_layout.addLayout(threshold_layout)
         queue_layout.addWidget(self._run_blurring_button)
 
         central_layout = QHBoxLayout()
@@ -268,12 +280,14 @@ class MainWindow(QMainWindow):
         if not self._verify_unique_filename(new_filename):
             msg = QMessageBox()
             msg.setText("Filename already in use!")
-            msg.setInformativeText("Cannot create two videos with the same filename. Check the options and try again.")
+            msg.setInformativeText(
+                "Cannot create two videos with the same filename. Check the options and try again."
+            )
             msg.setIcon(QMessageBox.Information)
             msg.setWindowTitle("Information!")
             msg.exec()
             return
-        
+
         original_name = QTableWidgetItem(local_path)
         original_name.setFlags(~Qt.ItemIsEditable)
         new_name = QTableWidgetItem(new_filename)
@@ -302,15 +316,14 @@ class MainWindow(QMainWindow):
             return f"{site_id}_sub{subject_id:03d}_{freezer_status}_{session_id}_{medication_status}_{trial_id}_{video_plane}_blur.mp4"
 
         return f"{site_id}_sub{subject_id:03d}_{freezer_status}_{session_id}_{medication_status}_{trial_id}-retr{retry}_{video_plane}_blur.mp4"
-    
+
     def _verify_unique_filename(self, prop: str) -> bool:
         for row in range(self._queue.rowCount()):
             name = self._queue.item(row, 1).text()
             if prop == name:
                 return False
-        
-        return True
 
+        return True
 
     @Slot()
     def remove_row(self) -> None:
@@ -322,6 +335,9 @@ class MainWindow(QMainWindow):
     def blur_videos(self) -> None:
         # Reset the cancel flag
         self._cancel_blurring = False
+
+        # Read the currently set threshold
+        threshold = self._threshold_spinbox.value()
 
         num_rows = self._queue.rowCount()
         if num_rows == 0:
@@ -375,13 +391,11 @@ class MainWindow(QMainWindow):
             for i, frame in enumerate(decoder.decode()):
                 if self._cancel_blurring:
                     break
-                
+
                 self.frame_progress.emit(i + 1)
                 QCoreApplication.processEvents()
                 img_as_array = frame.to_ndarray(format="rgb24")
-                dets, _ = centerface(
-                    img_as_array, frame.height, frame.width, threshold=0.2
-                )
+                dets, _ = centerface(img_as_array, frame.height, frame.width, threshold)
                 QCoreApplication.processEvents()  # the detection operation takes the longest, so process events on either side of it
                 for det in dets:
                     boxes, _ = det[:4], det[4]
@@ -409,7 +423,7 @@ class MainWindow(QMainWindow):
             encoder.finish()
             decoder.finish()
             QCoreApplication.processEvents()
-        
+
         progress_dialog.accept()  # close the progress dialog
 
     def _set_export_directory(self) -> str:
@@ -420,7 +434,7 @@ class MainWindow(QMainWindow):
             options=QFileDialog.ShowDirsOnly,
         )
         return dir
-    
+
     def _blurring_cancelled(self) -> None:
         self._cancel_blurring = True
 
