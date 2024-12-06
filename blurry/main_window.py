@@ -166,12 +166,14 @@ class MainWindow(QMainWindow):
         # File queue widget
         self._queue = QTableWidget(parent=self)
         self._queue.setRowCount(0)
-        self._queue.setColumnCount(2)
-        self._queue.setHorizontalHeaderLabels(["Original File", "New Name"])
+        self._queue.setColumnCount(3)
+        self._queue.setHorizontalHeaderLabels(
+            ["Original File", "New Name", "Remove Row"]
+        )
         horizontal_header = self._queue.horizontalHeader()
-        horizontal_header.setSectionResizeMode(
-            QHeaderView.Stretch
-        )  # make cols fill available space
+        horizontal_header.setSectionResizeMode(0, QHeaderView.Stretch)
+        horizontal_header.setSectionResizeMode(1, QHeaderView.Stretch)
+        horizontal_header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
 
         # Blur faces button
         self._run_blurring_button = QPushButton("Run blurring...", parent=self)
@@ -263,10 +265,15 @@ class MainWindow(QMainWindow):
         original_name.setFlags(~Qt.ItemIsEditable)
         new_name = QTableWidgetItem(new_filename)
         new_name.setFlags(~Qt.ItemIsEditable)
+        delete_button = QPushButton("Remove", parent=self._queue)
+        delete_button.clicked.connect(self.remove_row)
         num_rows = self._queue.rowCount()
+        # Create a custom property so each button knows what row to operate on
+        delete_button.setProperty("Row", num_rows)
         self._queue.setRowCount(num_rows + 1)
         self._queue.setItem(num_rows, 0, original_name)
         self._queue.setItem(num_rows, 1, new_name)
+        self._queue.setCellWidget(num_rows, 2, delete_button)
 
     def _build_filename(self) -> str:
         site_id = self._site_id_combobox.currentText()
@@ -282,6 +289,12 @@ class MainWindow(QMainWindow):
             return f"{site_id}_sub{subject_id:03d}_{freezer_status}_{session_id}_{medication_status}_{trial_id}_{video_plane}_blur.mp4"
 
         return f"{site_id}_sub{subject_id:03d}_{freezer_status}_{session_id}_{medication_status}_{trial_id}-retr{retry}_{video_plane}_blur.mp4"
+
+    @Slot()
+    def remove_row(self) -> None:
+        # Retrieve the button's Row property to know which row to delete
+        sender_row = self.sender().property("Row")
+        self._queue.removeRow(sender_row)
 
     @Slot()
     def blur_videos(self) -> None:
@@ -337,6 +350,7 @@ class MainWindow(QMainWindow):
                 dets, _ = centerface(
                     img_as_array, frame.height, frame.width, threshold=0.2
                 )
+                QCoreApplication.processEvents()  # the detection operation takes the longest, so process events on either side of it
                 for det in dets:
                     boxes, _ = det[:4], det[4]
                     x1, y1, x2, y2 = boxes.astype(int)
