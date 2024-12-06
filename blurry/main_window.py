@@ -56,6 +56,9 @@ class MainWindow(QMainWindow):
 
         # Store previously used video directory
         self._previous_dir = None
+        
+        # Flag for whether user has cancelled the blurring process
+        self._cancel_blurring = False
 
         # Widgets for video and audio playback
         self._media_player = QMediaPlayer()
@@ -317,6 +320,9 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def blur_videos(self) -> None:
+        # Reset the cancel flag
+        self._cancel_blurring = False
+
         num_rows = self._queue.rowCount()
         if num_rows == 0:
             return
@@ -341,8 +347,12 @@ class MainWindow(QMainWindow):
         self.frame_progress.connect(progress_dialog.update_frame_progress)
         self.frame_progress.connect(progress_dialog.update_frame_label)
         self.total_frames.connect(progress_dialog.update_total_frames)
+        progress_dialog.rejected.connect(self._blurring_cancelled)
         progress_dialog.show()
         for row in range(num_rows):
+            if self._cancel_blurring:
+                break
+
             self.video_progress.emit(row)
             QCoreApplication.processEvents()
             local_path = self._queue.item(row, 0).text()
@@ -363,6 +373,9 @@ class MainWindow(QMainWindow):
             )
             self.total_frames.emit(decoder.frames)
             for i, frame in enumerate(decoder.decode()):
+                if self._cancel_blurring:
+                    break
+                
                 self.frame_progress.emit(i + 1)
                 QCoreApplication.processEvents()
                 img_as_array = frame.to_ndarray(format="rgb24")
@@ -396,6 +409,8 @@ class MainWindow(QMainWindow):
             encoder.finish()
             decoder.finish()
             QCoreApplication.processEvents()
+        
+        progress_dialog.accept()  # close the progress dialog
 
     def _set_export_directory(self) -> str:
         dir = QFileDialog.getExistingDirectory(
@@ -405,6 +420,9 @@ class MainWindow(QMainWindow):
             options=QFileDialog.ShowDirsOnly,
         )
         return dir
+    
+    def _blurring_cancelled(self) -> None:
+        self._cancel_blurring = True
 
 
 if __name__ == "__main__":
