@@ -22,6 +22,7 @@ from PySide6.QtMultimediaWidgets import QVideoWidget
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QMessageBox,
     QDialog,
     QFileDialog,
     QGridLayout,
@@ -261,6 +262,15 @@ class MainWindow(QMainWindow):
             return
 
         new_filename = self._build_filename()
+        if not self._verify_unique_filename(new_filename):
+            msg = QMessageBox()
+            msg.setText("Filename already in use!")
+            msg.setInformativeText("Cannot create two videos with the same filename. Check the options and try again.")
+            msg.setIcon(QMessageBox.Information)
+            msg.setWindowTitle("Information!")
+            msg.exec()
+            return
+        
         original_name = QTableWidgetItem(local_path)
         original_name.setFlags(~Qt.ItemIsEditable)
         new_name = QTableWidgetItem(new_filename)
@@ -289,6 +299,15 @@ class MainWindow(QMainWindow):
             return f"{site_id}_sub{subject_id:03d}_{freezer_status}_{session_id}_{medication_status}_{trial_id}_{video_plane}_blur.mp4"
 
         return f"{site_id}_sub{subject_id:03d}_{freezer_status}_{session_id}_{medication_status}_{trial_id}-retr{retry}_{video_plane}_blur.mp4"
+    
+    def _verify_unique_filename(self, prop: str) -> bool:
+        for row in range(self._queue.rowCount()):
+            name = self._queue.item(row, 1).text()
+            if prop == name:
+                return False
+        
+        return True
+
 
     @Slot()
     def remove_row(self) -> None:
