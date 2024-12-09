@@ -55,6 +55,8 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
 
+        self.setWindowTitle("JP-FOG blurry")
+
         # Store previously used video directory
         self._previous_dir = None
 
@@ -304,6 +306,11 @@ class MainWindow(QMainWindow):
 
     def _build_filename(self) -> str:
         site_id = self._site_id_combobox.currentText()
+        if site_id == "Rochester":
+            site_id = ""
+        else:
+            site_id + "_"
+
         subject_id = self._subject_id_spinbox.value()
         freezer_status = self._freezer_status_combobox.currentText()
         session_id = self._session_id_combobox.currentText()
@@ -313,9 +320,9 @@ class MainWindow(QMainWindow):
         video_plane = self._video_plane_combobox.currentText()
 
         if retry == 0:
-            return f"{site_id}_sub{subject_id:03d}_{freezer_status}_{session_id}_{medication_status}_{trial_id}_{video_plane}_blur.mp4"
+            return f"{site_id}sub{subject_id:03d}_{freezer_status}_{session_id}_{medication_status}_{trial_id}_{video_plane}_blur.mp4"
 
-        return f"{site_id}_sub{subject_id:03d}_{freezer_status}_{session_id}_{medication_status}_{trial_id}-retr{retry}_{video_plane}_blur.mp4"
+        return f"{site_id}sub{subject_id:03d}_{freezer_status}_{session_id}_{medication_status}_{trial_id}-retr{retry}_{video_plane}_blur.mp4"
 
     def _verify_unique_filename(self, prop: str) -> bool:
         for row in range(self._queue.rowCount()):
