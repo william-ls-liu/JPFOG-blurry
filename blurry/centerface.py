@@ -1,25 +1,34 @@
-import numpy as np
 import cv2
+import numpy as np
 
 
 class CenterFace(object):
-    def __init__(self, landmarks=True):
+    def __init__(self, model_path, landmarks=True):
         self.landmarks = landmarks
         if self.landmarks:
-            self.net = cv2.dnn.readNetFromONNX('../models/centerface_bnmerged.onnx')
+            self.net = cv2.dnn.readNetFromONNX(model_path)
         else:
-            self.net = cv2.dnn.readNetFromONNX('../models/onnx/cface.1k.onnx')
+            self.net = cv2.dnn.readNetFromONNX("../models/onnx/cface.1k.onnx")
         self.img_h_new, self.img_w_new, self.scale_h, self.scale_w = 0, 0, 0, 0
 
     def __call__(self, img, height, width, threshold=0.5):
-        self.img_h_new, self.img_w_new, self.scale_h, self.scale_w = self.transform(height, width)
+        self.img_h_new, self.img_w_new, self.scale_h, self.scale_w = self.transform(
+            height, width
+        )
         return self.inference_opencv(img, threshold)
 
     def inference_opencv(self, img, threshold):
-        blob = cv2.dnn.blobFromImage(img, scalefactor=1.0, size=(self.img_w_new, self.img_h_new), mean=(0, 0, 0), swapRB=True, crop=False)
+        blob = cv2.dnn.blobFromImage(
+            img,
+            scalefactor=1.0,
+            size=(self.img_w_new, self.img_h_new),
+            mean=(0, 0, 0),
+            swapRB=True,
+            crop=False,
+        )
         self.net.setInput(blob)
         if self.landmarks:
-            heatmap, scale, offset, lms = self.net.forward(["537", "538", "539", '540'])
+            heatmap, scale, offset, lms = self.net.forward(["537", "538", "539", "540"])
         else:
             heatmap, scale, offset = self.net.forward(["535", "536", "537"])
         return self.postprocess(heatmap, lms, offset, scale, threshold)
@@ -31,13 +40,33 @@ class CenterFace(object):
 
     def postprocess(self, heatmap, lms, offset, scale, threshold):
         if self.landmarks:
-            dets, lms = self.decode(heatmap, scale, offset, lms, (self.img_h_new, self.img_w_new), threshold=threshold)
+            dets, lms = self.decode(
+                heatmap,
+                scale,
+                offset,
+                lms,
+                (self.img_h_new, self.img_w_new),
+                threshold=threshold,
+            )
         else:
-            dets = self.decode(heatmap, scale, offset, None, (self.img_h_new, self.img_w_new), threshold=threshold)
+            dets = self.decode(
+                heatmap,
+                scale,
+                offset,
+                None,
+                (self.img_h_new, self.img_w_new),
+                threshold=threshold,
+            )
         if len(dets) > 0:
-            dets[:, 0:4:2], dets[:, 1:4:2] = dets[:, 0:4:2] / self.scale_w, dets[:, 1:4:2] / self.scale_h
+            dets[:, 0:4:2], dets[:, 1:4:2] = (
+                dets[:, 0:4:2] / self.scale_w,
+                dets[:, 1:4:2] / self.scale_h,
+            )
             if self.landmarks:
-                lms[:, 0:10:2], lms[:, 1:10:2] = lms[:, 0:10:2] / self.scale_w, lms[:, 1:10:2] / self.scale_h
+                lms[:, 0:10:2], lms[:, 1:10:2] = (
+                    lms[:, 0:10:2] / self.scale_w,
+                    lms[:, 1:10:2] / self.scale_h,
+                )
         else:
             dets = np.empty(shape=[0, 5], dtype=np.float32)
             if self.landmarks:
@@ -58,10 +87,16 @@ class CenterFace(object):
             boxes = []
         if len(c0) > 0:
             for i in range(len(c0)):
-                s0, s1 = np.exp(scale0[c0[i], c1[i]]) * 4, np.exp(scale1[c0[i], c1[i]]) * 4
+                s0, s1 = (
+                    np.exp(scale0[c0[i], c1[i]]) * 4,
+                    np.exp(scale1[c0[i], c1[i]]) * 4,
+                )
                 o0, o1 = offset0[c0[i], c1[i]], offset1[c0[i], c1[i]]
                 s = heatmap[c0[i], c1[i]]
-                x1, y1 = max(0, (c1[i] + o1 + 0.5) * 4 - s1 / 2), max(0, (c0[i] + o0 + 0.5) * 4 - s0 / 2)
+                x1, y1 = (
+                    max(0, (c1[i] + o1 + 0.5) * 4 - s1 / 2),
+                    max(0, (c0[i] + o0 + 0.5) * 4 - s0 / 2),
+                )
                 x1, y1 = min(x1, size[1]), min(y1, size[0])
                 boxes.append([x1, y1, min(x1 + s1, size[1]), min(y1 + s0, size[0]), s])
                 if self.landmarks:

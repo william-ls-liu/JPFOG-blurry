@@ -2,6 +2,7 @@
 
 import os
 import shutil
+import sys
 
 import av
 import av.logging
@@ -52,8 +53,10 @@ class MainWindow(QMainWindow):
     frame_progress = Signal(int)
     total_frames = Signal(int)
 
-    def __init__(self) -> None:
+    def __init__(self, model_path) -> None:
         super().__init__()
+
+        self._model_path = model_path
 
         self.setWindowTitle("JP-FOG blurry")
 
@@ -309,7 +312,7 @@ class MainWindow(QMainWindow):
         if site_id == "Rochester":
             site_id = ""
         else:
-            site_id + "_"
+            site_id += "_"
 
         subject_id = self._subject_id_spinbox.value()
         freezer_status = self._freezer_status_combobox.currentText()
@@ -363,7 +366,7 @@ class MainWindow(QMainWindow):
             pass
 
         self._ensure_stopped()
-        centerface = CenterFace()
+        centerface = CenterFace(self._model_path)
         progress_dialog = ProgressDialog(self, num_rows)
         self.video_progress.connect(progress_dialog.update_queue_progress)
         self.video_progress.connect(progress_dialog.update_queue_label)
@@ -446,10 +449,21 @@ class MainWindow(QMainWindow):
         self._cancel_blurring = True
 
 
+def is_running_from_exe():
+    return getattr(sys, "frozen", False)
+
+
 if __name__ == "__main__":
+    if is_running_from_exe():
+        base_path = sys._MEIPASS
+        model_path = os.path.join(base_path, "models/centerface_bnmerged.onnx")
+    else:
+        base_path = os.path.dirname(__file__)
+        model_path = os.path.join(base_path, "../models/centerface_bnmerged.onnx")
+
     av.logging.set_level(av.logging.PANIC)
     app = QApplication()
-    main_window = MainWindow()
+    main_window = MainWindow(model_path)
     available_geometry = main_window.screen().availableGeometry()
     main_window.resize(
         available_geometry.width() / 1.5, available_geometry.height() / 1.1
