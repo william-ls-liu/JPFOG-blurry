@@ -101,6 +101,18 @@ class MainWindow(QMainWindow):
         self._scrubber.setRange(0, 0)
         self._scrubber.sliderPressed.connect(self._media_player.pause)
         self._scrubber.sliderReleased.connect(self.scrubber_released)
+        
+        # Slider to change volume
+        self._volume_slider = QSlider(Qt.Horizontal, parent=self)
+        available_width = self.screen().availableGeometry().width()
+        self._volume_slider.setFixedWidth(available_width / 5)
+        self._volume_slider.setRange(0, 100)
+        self._volume_slider.setValue(self._audio_output.volume())
+        self._volume_slider.setTickInterval(10)
+        self._volume_slider.setTickPosition(QSlider.TicksBelow)
+        self._volume_slider.setToolTip("Volume")
+        self._volume_slider.valueChanged.connect(lambda x:self._audio_output.setVolume(x / 100))
+        media_tool_bar.addWidget(self._volume_slider)
 
         # Label for video title
         self._video_label = QLabel("No file selected", parent=None)
@@ -239,8 +251,8 @@ class MainWindow(QMainWindow):
             self._media_player.setSource(file_dialog.selectedUrls()[0])
             self._video_label.setText(file_dialog.selectedFiles()[0])
             self._previous_dir = os.path.dirname(file_dialog.selectedFiles()[0])
+            self._volume_slider.setValue(20)
             self._media_player.play()
-            self._audio_output.setVolume(0)
         else:
             self._media_player.setSource(QUrl())
             self._video_label.setText("No file selected")
