@@ -154,6 +154,8 @@ class MainWindow(QMainWindow):
                 "stshuf",
                 "stagil",
                 "stdoor",
+                "vostop",
+                "custop"
             ]
         )
 
