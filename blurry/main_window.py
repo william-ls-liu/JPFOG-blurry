@@ -311,8 +311,10 @@ class MainWindow(QMainWindow):
 
         original_name = QTableWidgetItem(local_path)
         original_name.setFlags(~Qt.ItemIsEditable)
+        original_name.setToolTip(local_path)
         new_name = QTableWidgetItem(new_filename)
         new_name.setFlags(~Qt.ItemIsEditable)
+        new_name.setToolTip(new_filename)
         delete_button = QPushButton("Remove", parent=self._queue)
         delete_button.clicked.connect(self.remove_row)
         num_rows = self._queue.rowCount()
