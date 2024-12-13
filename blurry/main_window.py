@@ -296,9 +296,17 @@ class MainWindow(QMainWindow):
         local_path = self._media_player.source().toLocalFile()
         if local_path == "":
             return
+        if not self._verify_unique_filename(local_path, 0):
+            msg = QMessageBox()
+            msg.setText("Video file already in use!")
+            msg.setInformativeText("Cannot use the same source video file more than once.")
+            msg.setIcon(QMessageBox.Information)
+            msg.setWindowTitle("Information!")
+            msg.exec()
+            return
 
         new_filename = self._build_filename()
-        if not self._verify_unique_filename(new_filename):
+        if not self._verify_unique_filename(new_filename, 1):
             msg = QMessageBox()
             msg.setText("Filename already in use!")
             msg.setInformativeText(
@@ -345,9 +353,9 @@ class MainWindow(QMainWindow):
 
         return f"{site_id}sub{subject_id:03d}_{freezer_status}_{session_id}_{medication_status}_{trial_id}-retr{retry}_{video_plane}_blur.mp4"
 
-    def _verify_unique_filename(self, prop: str) -> bool:
+    def _verify_unique_filename(self, prop: str, col: int) -> bool:
         for row in range(self._queue.rowCount()):
-            name = self._queue.item(row, 1).text()
+            name = self._queue.item(row, col).text()
             if prop == name:
                 return False
 
