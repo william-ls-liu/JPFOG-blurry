@@ -332,6 +332,7 @@ class MainWindow(QMainWindow):
         self._queue.setItem(num_rows, 0, original_name)
         self._queue.setItem(num_rows, 1, new_name)
         self._queue.setCellWidget(num_rows, 2, delete_button)
+        self._queue.scrollToBottom()
 
     def _build_filename(self) -> str:
         site_id = self._site_id_combobox.currentText()
