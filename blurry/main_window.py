@@ -101,7 +101,7 @@ class MainWindow(QMainWindow):
         self._scrubber.setRange(0, 0)
         self._scrubber.sliderPressed.connect(self._media_player.pause)
         self._scrubber.sliderReleased.connect(self.scrubber_released)
-        
+
         # Slider to change volume
         self._volume_slider = QSlider(Qt.Horizontal, parent=self)
         available_width = self.screen().availableGeometry().width()
@@ -111,7 +111,9 @@ class MainWindow(QMainWindow):
         self._volume_slider.setTickInterval(10)
         self._volume_slider.setTickPosition(QSlider.TicksBelow)
         self._volume_slider.setToolTip("Volume")
-        self._volume_slider.valueChanged.connect(lambda x:self._audio_output.setVolume(x / 100))
+        self._volume_slider.valueChanged.connect(
+            lambda x: self._audio_output.setVolume(x / 100)
+        )
         media_tool_bar.addWidget(self._volume_slider)
 
         # Label for video title
@@ -352,6 +354,13 @@ class MainWindow(QMainWindow):
         # Retrieve the button's Row property to know which row to delete
         sender_row = self.sender().property("Row")
         self._queue.removeRow(sender_row)
+        QCoreApplication.processEvents()
+        self._update_row_property()
+
+    def _update_row_property(self) -> None:
+        for row in range(self._queue.rowCount()):
+            delete_button = self._queue.cellWidget(row, 2)
+            delete_button.setProperty("Row", row)
 
     @Slot()
     def blur_videos(self) -> None:
