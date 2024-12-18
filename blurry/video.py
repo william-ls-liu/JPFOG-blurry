@@ -10,8 +10,6 @@ class Encoder:
     ----------
     output : str
         Full path where video will be saved.
-    frames : array_like
-        Array of individual frames of the video.
     fps : float
         Frames per second of output video.
     bitrate : int
