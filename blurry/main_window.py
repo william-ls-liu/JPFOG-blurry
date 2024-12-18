@@ -434,7 +434,6 @@ class MainWindow(QMainWindow):
                 decoder.bit_rate,
                 decoder.width,
                 decoder.height,
-                decoder.codec,
             )
             self.total_frames.emit(decoder.frames)
             for i, frame in enumerate(decoder.decode()):
