@@ -3,6 +3,7 @@
 import os
 import shutil
 import sys
+from typing import Tuple
 
 import av
 import av.logging
@@ -155,7 +156,7 @@ class MainWindow(QMainWindow):
                 "stagil",
                 "stdoor",
                 "vostop",
-                "custop"
+                "custop",
             ]
         )
 
@@ -299,7 +300,9 @@ class MainWindow(QMainWindow):
         if not self._verify_unique_filename(local_path, 0):
             msg = QMessageBox()
             msg.setText("Video file already in use!")
-            msg.setInformativeText("Cannot use the same source video file more than once.")
+            msg.setInformativeText(
+                "Cannot use the same source video file more than once."
+            )
             msg.setIcon(QMessageBox.Information)
             msg.setWindowTitle("Information!")
             msg.exec()
@@ -390,14 +393,18 @@ class MainWindow(QMainWindow):
         export_dir = self._set_export_directory()
         if export_dir == "":
             return
-
-        blur_export_dir = os.path.join(export_dir, "blur")
-        unblur_export_dir = os.path.join(export_dir, "unblur")
-        try:
-            os.mkdir(blur_export_dir)
-            os.mkdir(unblur_export_dir)
-        except FileExistsError:
-            pass
+        if not self._verify_export_directory(export_dir):
+            msg = QMessageBox()
+            msg.setText(
+                "There is a problem with the export location's folder structure!"
+            )
+            msg.setInformativeText(
+                "Make sure you are selecting the parent folder that contains <b>source_data</b> and <b>derived_data</b>."
+            )
+            msg.setIcon(QMessageBox.Information)
+            msg.setWindowTitle("Information!")
+            msg.exec()
+            return
 
         self._ensure_stopped()
         centerface = CenterFace(self._model_path)
@@ -417,16 +424,14 @@ class MainWindow(QMainWindow):
             QCoreApplication.processEvents()
             local_path = self._queue.item(row, 0).text()
             new_name = self._queue.item(row, 1).text()
-            unblurred_new_name = new_name.replace("blur", "unblur")
-            shutil.copy2(
-                local_path, os.path.join(unblur_export_dir, unblurred_new_name)
-            )
-            new_path = os.path.join(blur_export_dir, new_name)
+            unblurred_path, blurred_path = self._get_export_path(export_dir, new_name)
+            if not os.path.exists(unblurred_path):
+                shutil.copy2(local_path, unblurred_path)
             decoder = Decoder(local_path)
             encoder = Encoder(
-                new_path,
+                blurred_path,
                 decoder.fps,
-                decoder.bit_rate // 2,
+                decoder.bit_rate,
                 decoder.width,
                 decoder.height,
                 decoder.codec,
@@ -478,6 +483,37 @@ class MainWindow(QMainWindow):
             options=QFileDialog.ShowDirsOnly,
         )
         return dir
+
+    def _verify_export_directory(self, dir: str) -> bool:
+        source_data_folder = os.path.join(dir, "source_data")
+        derived_data_folder = os.path.join(dir, "derived_data")
+        if os.path.exists(source_data_folder) and os.path.exists(derived_data_folder):
+            return True
+        return False
+
+    def _get_export_path(
+        self, parent_dir: str, blurred_filename: str
+    ) -> Tuple[str, str]:
+        unblurred_filename = blurred_filename.replace("blur", "unblur")
+        tokens = blurred_filename.split(".")[0].split("_")
+        subject_folder = f"{tokens[0]}_{tokens[1]}_{tokens[2]}"
+        session_folder = f"{tokens[3]}"
+        onoff_folder = f"{tokens[4]}"
+        unblurred_path = os.path.join(
+            parent_dir, "source_data", subject_folder, session_folder, onoff_folder
+        )
+        if not os.path.exists(unblurred_path):
+            os.makedirs(unblurred_path)
+
+        blurred_path = os.path.join(
+            parent_dir, "derived_data", subject_folder, session_folder, onoff_folder
+        )
+        if not os.path.exists(blurred_path):
+            os.makedirs(blurred_path)
+
+        return os.path.join(unblurred_path, unblurred_filename), os.path.join(
+            blurred_path, blurred_filename
+        )
 
     def _blurring_cancelled(self) -> None:
         self._cancel_blurring = True
