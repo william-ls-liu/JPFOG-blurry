@@ -1,12 +1,12 @@
 # Author: William Liu <liwi@ohsu.edu>
 
+import logging
 import os
 import shutil
 import sys
+from datetime import datetime
 from typing import Tuple
 
-import av
-import av.logging
 import cv2 as cv
 import skimage.draw
 from progress_dialog import ProgressDialog
@@ -45,6 +45,8 @@ from PySide6.QtWidgets import (
 from video import Decoder, Encoder
 
 from centerface import CenterFace
+
+logger = logging.getLogger(__name__)
 
 
 class MainWindow(QMainWindow):
@@ -238,10 +240,12 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         self._ensure_stopped()
+        logger.info("Application closed.")
         event.accept()
 
     @Slot()
     def open_video(self):
+        logger.debug("Open video file menu button pressed.")
         self._ensure_stopped()
         file_dialog = QFileDialog(self)
         movies_location = (
@@ -257,10 +261,12 @@ class MainWindow(QMainWindow):
             self._video_label.setText(file_dialog.selectedFiles()[0])
             self._previous_dir = os.path.dirname(file_dialog.selectedFiles()[0])
             self._volume_slider.setValue(20)
+            logger.info(f"{file_dialog.selectedFiles()[0]} was selected.")
             self._media_player.play()
         else:
             self._media_player.setSource(QUrl())
             self._video_label.setText("No file selected")
+            logger.info("No file selected or file dialog closed.")
 
     def _ensure_stopped(self):
         if self._media_player.playbackState() != QMediaPlayer.StoppedState:
@@ -294,6 +300,7 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def enqueue(self) -> None:
+        logger.debug("Enqueue button pressed.")
         local_path = self._media_player.source().toLocalFile()
         if local_path == "":
             return
@@ -392,8 +399,12 @@ class MainWindow(QMainWindow):
 
         export_dir = self._set_export_directory()
         if export_dir == "":
+            logger.info("Export file dialog was closed or cancelled.")
             return
         if not self._verify_export_directory(export_dir):
+            logger.info(
+                "Export was directory was selected, but does not conform to expected directory structure"
+            )
             msg = QMessageBox()
             msg.setText(
                 "There is a problem with the export location's folder structure!"
@@ -416,8 +427,12 @@ class MainWindow(QMainWindow):
         self.total_frames.connect(progress_dialog.update_total_frames)
         progress_dialog.rejected.connect(self._blurring_cancelled)
         progress_dialog.show()
+        logger.info(
+            f"Starting video blurring with a threshold of {threshold:.2f}. There are {num_rows} files to process."
+        )
         for row in range(num_rows):
             if self._cancel_blurring:
+                logger.info(f"Blurring cancelled at start of file {row + 1}.")
                 break
 
             self.video_progress.emit(row)
@@ -436,8 +451,14 @@ class MainWindow(QMainWindow):
                 decoder.height,
             )
             self.total_frames.emit(decoder.frames)
+            logger.info(
+                f"Starting to blur {local_path}. Blurred file will be located at {blurred_path} and unblurred file will be located at {unblurred_path}."
+            )
             for i, frame in enumerate(decoder.decode()):
                 if self._cancel_blurring:
+                    logger.info(
+                        f"Blurring cancelled for file {local_path}. {i} frames have already been processed."
+                    )
                     break
 
                 self.frame_progress.emit(i + 1)
@@ -470,6 +491,9 @@ class MainWindow(QMainWindow):
                 encoder.encode_frame(img_as_array)
             encoder.finish()
             decoder.finish()
+            logger.info(
+                f"Blurring finished for {local_path}. {i + 1} / {decoder.frames} were blurred."
+            )
             QCoreApplication.processEvents()
 
         progress_dialog.accept()  # close the progress dialog
@@ -523,6 +547,8 @@ def is_running_from_exe():
 
 
 if __name__ == "__main__":
+    VERSION = "1.0.0"
+
     if is_running_from_exe():
         base_path = sys._MEIPASS
         model_path = os.path.join(base_path, "models/centerface_bnmerged.onnx")
@@ -530,7 +556,20 @@ if __name__ == "__main__":
         base_path = os.path.dirname(__file__)
         model_path = os.path.join(base_path, "../models/centerface_bnmerged.onnx")
 
-    av.logging.set_level(av.logging.PANIC)
+    # Set up logging
+    cwd = os.getcwd()
+    log_folder = os.path.join(cwd, "log")
+    if not os.path.exists(log_folder):
+        os.mkdir(log_folder)
+    now = datetime.now()
+    datetime_as_str = now.strftime("%Y-%m-%d_%H%M%S%Z")
+    log_file = os.path.join(log_folder, f"{datetime_as_str}.log")
+    logging.basicConfig(filename=log_file, level=logging.INFO)
+    logging.getLogger("libav").setLevel(logging.INFO)
+    sys.stdout = open(log_file, "a")
+    sys.stderr = open(log_file, "a")
+    logger.info(f"Using blurry version {VERSION}.")
+
     app = QApplication()
     main_window = MainWindow(model_path)
     available_geometry = main_window.screen().availableGeometry()
