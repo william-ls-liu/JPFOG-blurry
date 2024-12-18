@@ -25,9 +25,7 @@ class Encoder:
     def __init__(self, output, fps, bitrate, width, height, codec="h264") -> None:
         # Open the video file to stream data
         self.video_out = av.open(output, mode="w")
-        self.stream = self.video_out.add_stream(
-            codec, rate=fps, options={"x265-params": "log_level=none"}
-        )
+        self.stream = self.video_out.add_stream(codec, rate=fps)
         self.stream.codec_context.bit_rate = bitrate
         self.stream.height = height
         self.stream.width = width
