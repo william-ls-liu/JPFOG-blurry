@@ -3,12 +3,11 @@
 import logging
 import os
 import shutil
+import subprocess
 import sys
 from datetime import datetime
 from typing import Tuple
 
-import cv2 as cv
-import skimage.draw
 from progress_dialog import ProgressDialog
 from PySide6.QtCore import (
     QCoreApplication,
@@ -42,9 +41,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from video import Decoder, Encoder
-
-from centerface import CenterFace
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +52,8 @@ class MainWindow(QMainWindow):
     frame_progress = Signal(int)
     total_frames = Signal(int)
 
-    def __init__(self, model_path) -> None:
+    def __init__(self) -> None:
         super().__init__()
-
-        self._model_path = model_path
 
         self.setWindowTitle("JP-FOG blurry")
 
@@ -85,6 +79,7 @@ class MainWindow(QMainWindow):
         open_action = QAction("&Open video file...", parent=self)
         open_action.triggered.connect(self.open_video)
         menu_bar.addAction(open_action)
+        menu_bar.setNativeMenuBar(False)
 
         # Create tool bar with media controls
         media_tool_bar = QToolBar(parent=self)
@@ -208,7 +203,7 @@ class MainWindow(QMainWindow):
         self._threshold_label = QLabel("Threshold value", parent=self)
         self._threshold_spinbox = QDoubleSpinBox(parent=self)
         self._threshold_spinbox.setMinimum(0.01)
-        self._threshold_spinbox.setValue(0.35)
+        self._threshold_spinbox.setValue(0.25)
         self._threshold_spinbox.setSingleStep(0.01)
 
         # Blur faces button
@@ -360,9 +355,15 @@ class MainWindow(QMainWindow):
         video_plane = self._video_plane_combobox.currentText()
 
         if retry == 0:
-            return f"{site_id}sub{subject_id:03d}_{freezer_status}_{session_id}_{medication_status}_{trial_id}_{video_plane}_blur.mp4"
+            return (
+                f"{site_id}sub{subject_id:03d}_{freezer_status}_{session_id}_"
+                f"{medication_status}_{trial_id}_{video_plane}_blur.mp4"
+            )
 
-        return f"{site_id}sub{subject_id:03d}_{freezer_status}_{session_id}_{medication_status}_{trial_id}-retr{retry}_{video_plane}_blur.mp4"
+        return (
+            f"{site_id}sub{subject_id:03d}_{freezer_status}_{session_id}_"
+            f"{medication_status}_{trial_id}-retr{retry}_{video_plane}_blur.mp4"
+        )
 
     def _verify_unique_filename(self, prop: str, col: int) -> bool:
         for row in range(self._queue.rowCount()):
@@ -410,7 +411,8 @@ class MainWindow(QMainWindow):
                 "There is a problem with the export location's folder structure!"
             )
             msg.setInformativeText(
-                "Make sure you are selecting the parent folder that contains <b>source_data</b> and <b>derived_data</b>."
+                "Make sure you are selecting the parent folder that contains"
+                "<b>source_data</b> and <b>derived_data</b>."
             )
             msg.setIcon(QMessageBox.Information)
             msg.setWindowTitle("Information!")
@@ -418,13 +420,8 @@ class MainWindow(QMainWindow):
             return
 
         self._ensure_stopped()
-        centerface = CenterFace(self._model_path)
         progress_dialog = ProgressDialog(self, num_rows)
-        self.video_progress.connect(progress_dialog.update_queue_progress)
         self.video_progress.connect(progress_dialog.update_queue_label)
-        self.frame_progress.connect(progress_dialog.update_frame_progress)
-        self.frame_progress.connect(progress_dialog.update_frame_label)
-        self.total_frames.connect(progress_dialog.update_total_frames)
         progress_dialog.rejected.connect(self._blurring_cancelled)
         progress_dialog.show()
         logger.info(
@@ -437,63 +434,41 @@ class MainWindow(QMainWindow):
 
             self.video_progress.emit(row)
             QCoreApplication.processEvents()
+
+            # Get paths to location of blurred and unblurred file
             local_path = self._queue.item(row, 0).text()
             new_name = self._queue.item(row, 1).text()
             unblurred_path, blurred_path = self._get_export_path(export_dir, new_name)
+
+            # Copy the original video and change the name
             if not os.path.exists(unblurred_path):
                 shutil.copy2(local_path, unblurred_path)
-            decoder = Decoder(local_path)
-            encoder = Encoder(
-                blurred_path,
-                decoder.fps,
-                decoder.bit_rate,
-                decoder.width,
-                decoder.height,
-            )
-            self.total_frames.emit(decoder.frames)
-            logger.info(
-                f"Starting to blur {local_path}. Blurred file will be located at {blurred_path} and unblurred file will be located at {unblurred_path}."
-            )
-            for i, frame in enumerate(decoder.decode()):
-                if self._cancel_blurring:
-                    logger.info(
-                        f"Blurring cancelled for file {local_path}. {i} frames have already been processed."
-                    )
-                    break
 
-                self.frame_progress.emit(i + 1)
-                QCoreApplication.processEvents()
-                img_as_array = frame.to_ndarray(format="rgb24")
-                dets, _ = centerface(img_as_array, frame.height, frame.width, threshold)
-                QCoreApplication.processEvents()  # the detection operation takes the longest, so process events on either side of it
-                for det in dets:
-                    boxes, _ = det[:4], det[4]
-                    x1, y1, x2, y2 = boxes.astype(int)
-                    h, w = y2 - y1, x2 - x1
-                    scale = 0.3
-                    bf = 2
-                    y1 -= int(h * scale)
-                    y2 += int(h * scale)
-                    x1 -= int(w * scale)
-                    x2 += int(w * scale)
-                    y1, y2 = max(0, y1), min(img_as_array.shape[0] - 1, y2)
-                    x1, x2 = max(0, x1), min(img_as_array.shape[1] - 1, x2)
-                    face_roi = img_as_array[y1:y2, x1:x2]
-                    blurred_box = cv.blur(
-                        img_as_array[y1:y2, x1:x2],
-                        (abs(x2 - x1) // bf, abs(y2 - y1) // bf),
-                    )
-                    ey, ex = skimage.draw.ellipse(
-                        (y2 - y1) // 2, (x2 - x1) // 2, (y2 - y1) // 2, (x2 - x1) // 2
-                    )
-                    face_roi[ey, ex] = blurred_box[ey, ex]
-                    img_as_array[y1:y2, x1:x2] = face_roi
-                encoder.encode_frame(img_as_array)
-            encoder.finish()
-            decoder.finish()
-            logger.info(
-                f"Blurring finished for {local_path}. {i + 1} / {decoder.frames} were blurred."
-            )
+            # Run deface on current video
+            commands = [
+                "deface",
+                local_path,
+                "--output",
+                blurred_path,
+                "--thresh",
+                str(threshold),
+                "--replacewith",
+                "blur",
+            ]
+
+            self.blurring_process = subprocess.Popen(commands)
+            self.blurring_finished: bool = False
+            while not self.blurring_finished:
+                # Poll the subprocess and see if it is still running
+                retcode = self.blurring_process.poll()
+                if retcode is not None:
+                    self.blurring_finished = True
+                else:
+                    QCoreApplication.processEvents()
+
+            if retcode != 0:
+                logger.warning(f"Blurring of {new_name} returned error code {retcode}")
+
             QCoreApplication.processEvents()
 
         progress_dialog.accept()  # close the progress dialog
@@ -539,39 +514,45 @@ class MainWindow(QMainWindow):
         )
 
     def _blurring_cancelled(self) -> None:
+        if self.blurring_process:
+            self.blurring_process.terminate()
         self._cancel_blurring = True
+
+    def _subprocess_finished(self) -> None:
+        self._blurring_finished = True
 
 
 def is_running_from_exe():
-    return getattr(sys, "frozen", False)
+    return getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")
 
 
 if __name__ == "__main__":
-    VERSION = "1.0.0"
+    VERSION = "2.0.0"
 
     if is_running_from_exe():
-        base_path = sys._MEIPASS
-        model_path = os.path.join(base_path, "models/centerface_bnmerged.onnx")
+        cwd = sys._MEIPASS
     else:
-        base_path = os.path.dirname(__file__)
-        model_path = os.path.join(base_path, "../models/centerface_bnmerged.onnx")
+        cwd = os.path.dirname(os.path.abspath(__file__))
 
     # Set up logging
-    cwd = os.getcwd()
     log_folder = os.path.join(cwd, "log")
     if not os.path.exists(log_folder):
         os.mkdir(log_folder)
     now = datetime.now()
     datetime_as_str = now.strftime("%Y-%m-%d_%H%M%S%Z")
     log_file = os.path.join(log_folder, f"{datetime_as_str}.log")
-    logging.basicConfig(filename=log_file, level=logging.INFO)
-    logging.getLogger("libav").setLevel(logging.INFO)
+    logging.basicConfig(
+        filename=log_file,
+        format="%(asctime)s %(levelname)-8s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        level=logging.INFO,
+    )
     sys.stdout = open(log_file, "a")
     sys.stderr = open(log_file, "a")
     logger.info(f"Using blurry version {VERSION}.")
 
     app = QApplication()
-    main_window = MainWindow(model_path)
+    main_window = MainWindow()
     available_geometry = main_window.screen().availableGeometry()
     main_window.resize(
         available_geometry.width() / 1.5, available_geometry.height() / 1.1

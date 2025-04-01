@@ -32,18 +32,12 @@ class ProgressDialog(QDialog):
 
         self.queue_progressbar = QProgressBar(parent=self)
         self.queue_progressbar.setMinimum(0)
-        self.queue_progressbar.setMaximum(self.num_videos_to_blur)
+        self.queue_progressbar.setMaximum(0)
         self.queue_label = QLabel(parent=self)
-
-        self.frame_progressbar = QProgressBar(parent=self)
-        self.frame_progressbar.setMinimum(0)
-        self.frame_label = QLabel(parent=self)
 
         layout = QVBoxLayout()
         layout.addWidget(self.queue_label)
         layout.addWidget(self.queue_progressbar)
-        layout.addWidget(self.frame_label)
-        layout.addWidget(self.frame_progressbar)
         layout.addWidget(self.button_box)
         self.setLayout(layout)
 
@@ -54,16 +48,3 @@ class ProgressDialog(QDialog):
     @Slot(int)
     def update_queue_label(self, value) -> None:
         self.queue_label.setText(f"Working on video {value + 1}/{self.num_videos_to_blur}")
-
-    @Slot(int)
-    def update_total_frames(self, value) -> None:
-        self.frame_progressbar.setMaximum(value)
-        self.num_frames = value
-
-    @Slot(int)
-    def update_frame_progress(self, value) -> None:
-        self.frame_progressbar.setValue(value)
-
-    @Slot(int)
-    def update_frame_label(self, value) -> None:
-        self.frame_label.setText(f"Working on frame {value}/{self.num_frames}")
